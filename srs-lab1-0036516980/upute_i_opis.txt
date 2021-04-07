@@ -1,0 +1,31 @@
+Program se pokreće tako da se pozicionira u root folder i pozovu sljedeće dvije naredbe:
+
+javac -d bin src/hr/fer/srs/lab1/Main.java src/hr/fer/srs/lab1/PasswordManager.java
+
+java -cp bin hr.fer.srs.lab1.Main init mAsTEr
+
+Prva naredba kompajlira napisani kod, a druga pokreće program i inicijalizira password manager
+sa master passwordom. Kako bi se dodala šifra u password manager treba se pokrenuti iduća naredba:
+
+java -cp bin hr.fer.srs.lab1.Main put mAsTEr www.fer.hr passwordForWebSite
+
+Za dohvaćanje spremljene šifre iz password managera treba se pokrenuti iduća naredba:
+
+java -cp bin hr.fer.srs.lab1.Main get mAsTEr www.fer.hr
+
+Program je organiziran tako da se spremaju macSalt, mac, salt, iv i encryptedText u datoteku
+resources/safe.txt. Ako netko promijeni sadržaj datoteke resources/safe.txt, korisnik više ne
+može ući u password manager jer smatramo podatke neispravnima. Prilikom prvog pokretanja programa,
+treba se inicijalizirati password manager slanjem dva argumenta: init masterPassword. Nakon svakog pokretanja
+programa sa naredbom init, podaci iz baze će biti obrisani. Prije nego što se obavi naredba
+put ili get prvo se treba korisnik autentificirati. U metodi se pročitaju podaci iz datoteke safe.txt,
+generira se ključ sa macSaltom te se generira mac kojem u se u doFinal metodu pošalje polje bajtova(salt, 
+iv i encryptedText). Generirani mac i mac koji je bio zapisan u datoteci se usporede, ako su jednaki, 
+korisnik može obaviti naredbu kojuje poslao, a ako nisu jednaki onda ostaje zaključan vani. 
+Ovakav način generiranja maca omogućava integritet.
+Kriptirani parovi stranica-šifra se dekriptiraju uz pomoć master šifre, salta, i iv, dodaje se novi par 
+ili se čita šifra ovisno o naredbi te se onda ponovno generiraju macSalt, salt, iv. S novim podacima kriptiramo
+parove stranica-šifra te generiramo mac pa zapišemo sve podatke u datoteku safe.txt. Master šifra se ne zapisuje
+u datoteku.
+
+0036516980
