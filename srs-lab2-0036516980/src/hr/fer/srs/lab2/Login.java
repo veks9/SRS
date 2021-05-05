@@ -1,11 +1,12 @@
 package hr.fer.srs.lab2;
 
 import java.io.Console;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.security.spec.InvalidKeySpecException;
@@ -22,67 +23,69 @@ public class Login {
 	private static final int SALT_LEN = 256;
 	private static final int ITERATIONS = 1000;
 	private static final int KEY_LENGTH = 256;
+	private static final int HASH_PASSWORD_LENGTH = 32;
 	private String username;
 	private Map<String, LoginEntry> map = new HashMap<>();
 	private File file = new File("./resources/safe.txt");
+	private long timeoutSeconds = 1L;
 
 	public Login(String username) {
 		this.username = username;
 	}
 
-	public void start() throws InvalidKeySpecException, NoSuchAlgorithmException {
-		byte[] fileContent = null;
+	public void start() throws InvalidKeySpecException, NoSuchAlgorithmException, IOException, InterruptedException {
 		if (!file.exists()) {
 			exitError();
 		}
 
-		try {
-			fileContent = Files.readAllBytes(file.toPath());
-		} catch (IOException e) {
-			System.out.println(e.getMessage());
-		}
-		String fileContentString = new String(fileContent, StandardCharsets.UTF_8);
-		createMap(fileContentString);
-
-		if (!map.containsKey(username))
-			exitError();
+		readFile();
 
 		Console cnsl = null;
 		char[] inputPassword = null;
 		do {
 			try {
 				cnsl = System.console();
-				if (cnsl != null) 
-					inputPassword = cnsl.readPassword("Password: ");	
+				if (cnsl != null)
+					inputPassword = cnsl.readPassword("Password: ");
 			} catch (Exception ex) {
 				System.out.println("Error!");
 				System.exit(0);
 			}
-		} while(authenticate(new String(inputPassword)));
+		} while (!authenticate(new String(inputPassword)));
 		checkIfNewPasswordFlag();
-		
+
 		System.out.println("Login successful.");
 	}
 
-	private void checkIfNewPasswordFlag() throws InvalidKeySpecException, NoSuchAlgorithmException {
-		boolean changePasswordFlag = (map.get(username)).changePasswordFlag;
-		if(changePasswordFlag) {
+	private void readFile() throws IOException {
+		DataInputStream dis = new DataInputStream(new FileInputStream(file));
+		while (dis.available() != 0) {
+			String user = dis.readUTF();
+			byte[] hashPassword = dis.readNBytes(HASH_PASSWORD_LENGTH);
+			byte[] salt = dis.readNBytes(SALT_LEN);
+			boolean changePasswordFlag = dis.readBoolean();
+			map.put(user, new LoginEntry(hashPassword, salt, changePasswordFlag));
+		}
+	}
+
+	private void checkIfNewPasswordFlag() throws InvalidKeySpecException, NoSuchAlgorithmException, IOException {
+		boolean changePasswordFlag = (map.get(username)).isChangePasswordFlag();
+		if (changePasswordFlag) {
 			changePassword();
-			
 		}
 	}
 
-	private void writeToFile(byte[] byteArray) {
-		try (FileOutputStream fos = new FileOutputStream(file)) {
-		    fos.write(byteArray);
-		} catch (IOException ioe) {
-			System.out.println("Error!");
-			System.exit(0);
+	private void writeToFile() throws IOException {
+		DataOutputStream dos = new DataOutputStream(new FileOutputStream(file));
+		for (Entry<String, LoginEntry> e : map.entrySet()) {
+			dos.writeUTF(e.getKey());
+			dos.write(e.getValue().getHashPassword(), 0, e.getValue().getHashPassword().length);
+			dos.write(e.getValue().getSalt(), 0, e.getValue().getSalt().length);
+			dos.writeBoolean(e.getValue().isChangePasswordFlag());
 		}
-		
 	}
 
-	private void changePassword() throws InvalidKeySpecException, NoSuchAlgorithmException {
+	private void changePassword() throws InvalidKeySpecException, NoSuchAlgorithmException, IOException {
 		Console cnsl = null;
 		char[] inputPassword = null;
 		char[] repeatedPassword = null;
@@ -92,56 +95,58 @@ public class Login {
 				if (cnsl != null) {
 					inputPassword = cnsl.readPassword("New password: ");
 					repeatedPassword = cnsl.readPassword("Repeat new password: ");
-					if(!Arrays.equals(inputPassword, repeatedPassword)) {
+					if (!Arrays.equals(inputPassword, repeatedPassword)) {
 						System.out.println("Password change failed. Password mismatch.");
+						continue;
+					}
+					
+					String inputPasswordString = new String(inputPassword);
+					LoginEntry e = map.get(username);					
+					if (Arrays.equals(hashPassword(inputPasswordString, e.getSalt()), e.getHashPassword())) {
+						System.out.println("New password can't be the same as old one!");
+						continue;
+					}
+
+					if(!isMinimalComplexityPassword(inputPasswordString)) {
+						System.out.println("New password has to contain at least one uppercase letter, "
+								+ "one lowercase letter and a number and has to be at least 8 characters long.");
 						continue;
 					}
 					break;
 				}
-	
+
 			} catch (Exception ex) {
 				System.out.println("Error!");
 				System.exit(0);
 			}
-		} while(true);
-		
+		} while (true);
+
 		String stringInputPassword = new String(inputPassword);
 		LoginEntry e = map.get(username);
 		byte[] salt = generateRandomBytes(SALT_LEN);
-		e.hashPassword = hashPassword(stringInputPassword, salt);
-		writeToFile(deconstructMap());
+		e = new LoginEntry(hashPassword(stringInputPassword, salt), salt, false);
+		map.put(username, e);
+
+		writeToFile();
 	}
 
-	private boolean authenticate(String inputPassword) throws InvalidKeySpecException, NoSuchAlgorithmException {
-		byte[] mapHashedPassword = (map.get(username)).hashPassword;
-		byte[] salt = (map.get(username)).salt;
-		byte[] inputHashedPassword = hashPassword(inputPassword, salt);
-		
-		if(!Arrays.equals(mapHashedPassword, inputHashedPassword)) {
+	private boolean authenticate(String inputPassword)
+			throws InvalidKeySpecException, NoSuchAlgorithmException, InterruptedException {
+		if(map.get(username) == null) {
 			System.out.println("Username or password incorrect.");
 			return false;
 		}
+		byte[] mapHashedPassword = (map.get(username)).getHashPassword();
+		byte[] salt = (map.get(username)).getSalt();
+		byte[] inputHashedPassword = hashPassword(inputPassword, salt);
+
+		if (!Arrays.equals(mapHashedPassword, inputHashedPassword)) {
+			System.out.println("Username or password incorrect.");
+			timeoutSeconds *= 2;
+			Thread.sleep(timeoutSeconds * 1000);
+			return false;
+		}
 		return true;
-		
-	}
-
-	private void createMap(String fileContent) {
-		if (fileContent.length() == 0)
-			return;
-		String[] rows = fileContent.split("\n");
-		for (String row : rows) {
-			String[] arr = row.split("\t");
-			LoginEntry e = new LoginEntry(arr[0].getBytes(), arr[1].getBytes(), (arr[2].equals("1") ? true : false));
-			map.put(arr[0], e);
-		}
-	}
-
-	private byte[] deconstructMap() {
-		String s = "";
-		for (Entry<String, LoginEntry> e : map.entrySet()) {
-			s += e.getKey() + "\t" + e.getValue().toString() + "\n";
-		}
-		return s.getBytes();
 	}
 
 	private void exitError() {
@@ -166,26 +171,7 @@ public class Login {
 		}
 	}
 
-	private static class LoginEntry {
-		private byte[] hashPassword;
-		private byte[] salt;
-		private boolean changePasswordFlag;
-
-		public LoginEntry(byte[] hashPassword, byte[] salt, boolean changePasswordFlag) {
-			super();
-			this.hashPassword = hashPassword;
-			this.salt = salt;
-			this.changePasswordFlag = changePasswordFlag;
-		}
-
-		@Override
-		public String toString() {
-			return hashPassword.toString() + "\t" + salt.toString() + "/t" + (changePasswordFlag ? "1" : "0");
-		}
-
-	}
-
-	private static byte[] generateRandomBytes(int length) {
+	private byte[] generateRandomBytes(int length) {
 		SecureRandom sr = new SecureRandom();
 
 		byte[] bytes = new byte[length];
@@ -194,8 +180,30 @@ public class Login {
 		return bytes;
 
 	}
-	
-	public static void main(String[] args) throws InvalidKeySpecException, NoSuchAlgorithmException {
+
+	private boolean isMinimalComplexityPassword(String password) {
+		if(password.equalsIgnoreCase(username)) return false;
+		if(password.length() < 8) return false;
+		char ch;
+		boolean capitalFlag = false;
+		boolean lowerCaseFlag = false;
+		boolean numberFlag = false;
+		for (int i = 0; i < password.length(); i++) {
+			ch = password.charAt(i);
+			if (Character.isDigit(ch)) {
+				numberFlag = true;
+			} else if (Character.isUpperCase(ch)) {
+				capitalFlag = true;
+			} else if (Character.isLowerCase(ch)) {
+				lowerCaseFlag = true;
+			}
+			if (numberFlag && capitalFlag && lowerCaseFlag)
+				return true;
+		}
+		return false;
+	}
+
+	public static void main(String[] args) throws Exception {
 		if (args.length != 1)
 			throw new IllegalArgumentException("Application has to get 1 argument, username!");
 
