@@ -1,0 +1,33 @@
+Prvo se treba kompajlirati kod sa naredbom:
+
+javac -d bin src/hr/fer/srs/lab2/*.java
+
+Kako bi se pokrenuo UserMgmt treba se pokrenuti naredba
+
+java -cp bin hr.fer.srs.lab2.UserMgmt argument1 argument2
+
+- argument1: add, passwd, del ili forcepass
+- argument2: korisničko ime
+
+UserMgmt je ulazna točka namijenjena administratoru sustava. Postoje 4 akcije koje administrator može
+napraviti. Kako bi se dodao novi korisnik u bazu podataka treba se pokrenuti program sa argumentima "add username".
+Kako bi se izbrisao korisnik iz baze podataka treba se pokrenuti program sa argumentima "del username". Kako bi se
+dalo korisniku do znanja da mora promijeniti svoju lozinku prilikom iduće prijave program je potrebno pokrenuti sa
+argumentima "forcepass username". Kako bi se promijenila lozinka za korisnika program se treba pokrenuti sa argumentima
+"passwd username".
+
+Kako bi se pokrenuo Login treba se pokrenuti naredba
+
+java -cp bin hr.fer.srs.lab2.Login argument1
+
+- argument1: korisničko ime
+
+Login je ulazna točka namijenjena korisniku sustava. Korisnik preda svoje korisničko ime u argumentima pri pokretanju programa
+te mu se omogući da unese lozinku. Ako je lozinka točna dopusti mu se ulazak u sustav.
+
+Sustav ima provjeru je li lozinka dovoljno kompleksna - najmanje jedno veliko i jedno malo slovo, jedna brojka te duljina od
+najmanje 8 znakova. Također kada se unosi nova lozinka sustav zna prepoznati da je upisana stara lozinka i ako je traži od korisnika
+da unese neku drugu. Nakon što se unese kriva lozinka se mora čekati 2^n sekundi (n = 0 za prvi pokušaj) prije nego što se
+opet može unijeti lozinka.
+
+0036516980
